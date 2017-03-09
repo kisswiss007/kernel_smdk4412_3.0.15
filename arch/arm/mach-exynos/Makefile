@@ -87,7 +87,7 @@ obj-$(CONFIG_PANEL_S2PLUS)		+= s2plus-panel.o
 obj-$(CONFIG_MACH_U1)			+= u1_regulator_consumer.o
 obj-$(CONFIG_MACH_PX)			+= u1_regulator_consumer.o
 obj-$(CONFIG_MACH_NURI)			+= mach-nuri.o
-obj-$(CONFIG_MACH_SMDK4X12)		+= mach-smdk4x12.o
+obj-$(CONFIG_MACH_SMDK4X12)		+= mach-kcppk.o
 ifeq ($(CONFIG_MACH_P4NOTE),y)
 obj-$(CONFIG_MACH_MIDAS)		+= mach-p4notepq.o px-switch.o p4note-jack.o
 else
@@ -153,6 +153,7 @@ obj-$(CONFIG_EXYNOS4_DEV_DWMCI)		+= dev-dwmci.o
 obj-$(CONFIG_EXYNOS_DEV_C2C)		+= dev-c2c.o
 obj-$(CONFIG_EXYNOS4_DEV_FIMC_IS)	+= dev-fimc-is.o
 obj-$(CONFIG_EXYNOS4_DEV_FIMC_LITE)	+= dev-fimc-lite.o
+obj-$(CONFIG_EXYNOS_DEV_TMU)		+= dev-tmu.o
 obj-$(CONFIG_EXYNOS5_DEV_GSC)		+= dev-gsc.o
 
 obj-$(CONFIG_EXYNOS4_SETUP_FIMC)	+= setup-fimc.o
@@ -229,6 +230,7 @@ obj-$(CONFIG_BT_BCM43241)		+= board-bluetooth-bcm43241.o
 obj-$(CONFIG_GPS_BCM47511)		+= bcm47511.o
 obj-$(CONFIG_SEC_THERMISTOR)		+= sec_thermistor.o
 obj-$(CONFIG_EXYNOS_SYSREG_PM)		+= sysreg.o
+obj-$(CONFIG_EXYNOS_THERMAL)		+= tmu-exynos.o
 
 obj-$(CONFIG_EXYNOS4_DEV_TMU)           += dev-slp-tmu.o
 obj-$(CONFIG_QC_MODEM_MDM9X15)	+= mdm2.o mdm_common.o mdm_device.o

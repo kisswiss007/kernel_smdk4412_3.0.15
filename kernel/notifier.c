@@ -94,12 +94,17 @@ static int __kprobes notifier_call_chain(struct notifier_block **nl,
 
 		if (nr_calls)
 			(*nr_calls)++;
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
 
+		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK)
+			break;
+#else		
 		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK) {
 			pr_info("notifier_call_chain : NOTIFY BAD %pf\n",
 				nb->notifier_call);
 			break;
 		}
+#endif		
 		nb = next_nb;
 		nr_to_call--;
 	}

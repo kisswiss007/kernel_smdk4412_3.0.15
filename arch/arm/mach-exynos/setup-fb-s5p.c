@@ -832,7 +832,7 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 		dev_err(&pdev->dev, "failed to clk_set_parent for fimd\n");
 		goto err_clk2;
 	}
-
+#ifndef CONFIG_MFD_SOAP_KCPPK_BUTTONS
 	if (!lcd->vclk) {
 		rate = get_clk_rate(pdev, mout_mpll);
 		if (!rate)
@@ -840,7 +840,9 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 		lcd->vclk = rate;
 	} else
 		rate = lcd->vclk;
-
+#else
+        rate = 800 * MHZ;	/* MOUT PLL */
+#endif
 	ret = clk_set_rate(sclk, rate);
 
 	if (ret < 0) {

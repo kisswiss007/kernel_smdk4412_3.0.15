@@ -3,7 +3,7 @@
 #
 ifeq ($(CONFIG_FB_S5P),y)
 obj-y				+= s3cfb.o
-s3cfb-y				:= s3cfb_main.o s3cfb_ops.o lcdfreq.o
+s3cfb-y				:= s3cfb_main.o s3cfb_ops.o
 obj-$(CONFIG_ARCH_S5PV210)	+= s3cfb_fimd6x.o
 obj-$(CONFIG_ARCH_EXYNOS4)	+= s3cfb_fimd6x.o
 
@@ -12,6 +12,7 @@ obj-$(CONFIG_FB_S5P_S6F1202A)	+= s3cfb_s6c1372.o
 obj-$(CONFIG_FB_S5P_LTE480WV)	+= s3cfb_lte480wv.o
 obj-$(CONFIG_FB_S5P_HT101HD1)	+= s3cfb_ht101hd1.o
 obj-$(CONFIG_FB_S5P_WA101S)	+= s3cfb_wa101s.o
+obj-$(CONFIG_FB_S5P_KYOSE600)	+= s3cfb_kyose600.o
 obj-$(CONFIG_FB_S5P_AMS369FG06)	+= s3cfb_ams369fg06.o
 obj-$(CONFIG_FB_S5P_LD9040)	+= ld9040.o smart_dimming_ld9042.o
 obj-$(CONFIG_FB_S5P_NT35560)	+= nt35560.o

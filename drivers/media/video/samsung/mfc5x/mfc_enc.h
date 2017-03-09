@@ -41,10 +41,7 @@ struct mfc_enc_ctx {
 
 	/* init | exec */
 	unsigned int framemap;
-	unsigned int inputformat;
-#if SUPPORT_SLICE_ENCODING
 	unsigned int outputmode;
-#endif
 
 	/* exec */
 	unsigned int interlace;
@@ -59,10 +56,10 @@ struct mfc_enc_ctx {
 	unsigned int frame_skip_enable;
 	unsigned int vui_info_enable;
 	unsigned int hier_p_enable;
-#if SUPPORT_SLICE_ENCODING
+
 	unsigned int slicecount;
 	unsigned int slicesize;
-#endif
+
 	/* change flag */
 	unsigned int setflag;
 	unsigned int FrameTypeCngTag;

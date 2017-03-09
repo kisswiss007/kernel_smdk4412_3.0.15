@@ -132,13 +132,10 @@ config FB_S5P_WA101S
 	help
 	  This enables support for 10.1" 1366*768 LCD panel
 
-config FB_S5P_AMS369FG06
-	bool "AMS369FG06"
-	depends on MACH_SMDKV310 || MACH_SMDKC210
-	select SPI_BITBANG
-	select SPI_GPIO
+config FB_S5P_KYOSE600
+	bool "KYOSE600"
 	help
-	  This enables support for Samsung AMS369FG06 3.7" WVGA AMOLED panel
+	  Only for Kcppk Display
 
 config FB_S5P_S6C1372
 	bool "S6C1372"

@@ -396,6 +396,10 @@ static int fimc_capture_scaler_info(struct fimc_control *ctrl)
 			sc->vfactor = 1;
 		}
 	}
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+			sc->pre_vratio = 1;
+			sc->vfactor = 1;
+#endif			
 
 
 	sc->pre_dst_width = sx / sc->pre_hratio;
@@ -802,7 +806,7 @@ static int fimc_configure_subdev(struct fimc_control *ctrl)
 		if (ret < 0) {
 			fimc_err("%s: fail to initialize subdev\n", __func__);
 
-#ifndef CONFIG_MACH_GC1			
+#ifndef CONFIG_MFD_SOAP_KCPPK_BUTTONS
 			client = v4l2_get_subdevdata(sd);
 			i2c_unregister_device(client);
 			ctrl->cam->sd = NULL;
@@ -2220,15 +2224,27 @@ int fimc_s_ctrl_capture(void *fh, struct v4l2_control *c)
 		if ((ctrl->cam->id == CAMERA_WB) || \
 			 (ctrl->cam->id == CAMERA_WB_B))
 			break;
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+		if (fimc_cam_use) 
+			if (ctrl->cam->sd)
+				ret = v4l2_subdev_call(ctrl->cam->sd,
+							core, s_ctrl, c);
+		if (ctrl->is.sd && ctrl->cam->use_isp)
+				ret = v4l2_subdev_call(ctrl->is.sd,
+							core, s_ctrl, c);
+		else
+#else
 		if (fimc_cam_use) {
 			if (ctrl->cam->sd)
 				ret = v4l2_subdev_call(ctrl->cam->sd,
 							core, s_ctrl, c);
-			if (ctrl->is.sd && ctrl->cam->use_isp)
+		if (ctrl->is.sd && ctrl->cam->use_isp)
 				ret = v4l2_subdev_call(ctrl->is.sd,
 							core, s_ctrl, c);
 		} else
-			ret = 0;
+#endif
+		ret = 0;
+		
 		break;
 	}
 
@@ -2622,7 +2638,9 @@ int fimc_streamon_capture(void *fh)
 	if (!ctrl->is.sd && cap->movie_mode &&
 		!((cam->width == 880 && cam->height == 720))) {
 		printk(KERN_INFO "\n\n\n%s pm_qos_req is called..\n", __func__ );
+#ifndef CONFIG_MFD_SOAP_KCPPK_BUTTONS		
 		dev_lock(ctrl->bus_dev, ctrl->dev, (unsigned long)400200);
+#endif
 		pm_qos_add_request(&bus_qos_pm_qos_req, PM_QOS_BUS_QOS, 1);
 
 		/* ioremap for register block */
@@ -2788,7 +2806,9 @@ int fimc_streamoff_capture(void *fh)
 		!(ctrl->cam->width == 880 && ctrl->cam->height == 720)) {
 		printk(KERN_INFO "\n\n\n%s pm_qos_req is removed..\n", __func__ );
 		pm_qos_remove_request(&bus_qos_pm_qos_req);
+#ifndef CONFIG_MFD_SOAP_KCPPK_BUTTONS		
 		dev_unlock(ctrl->bus_dev, ctrl->dev);
+#endif
 
 		/* ioremap for register block */
 		qos_regs = ioremap(0x11a00400, 0x10);

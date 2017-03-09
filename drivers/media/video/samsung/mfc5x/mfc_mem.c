@@ -46,7 +46,7 @@
 #include "mfc_pm.h"
 
 static int mem_ports = -1;
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 static struct mfc_mem mem_infos[MFC_MAX_MEM_CHUNK_NUM];
 #else
 static struct mfc_mem mem_infos[MFC_MAX_MEM_PORT_NUM];
@@ -56,29 +56,23 @@ static struct mfc_mem mem_infos[MFC_MAX_MEM_PORT_NUM];
 static struct mfc_vcm vcm_info;
 #endif
 
+#ifndef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 static int mfc_mem_addr_port(unsigned long addr)
 {
 	int i;
 	int port = -1;
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	for (i = 0; i < MFC_MAX_MEM_CHUNK_NUM; i++) {
-#else
 	for (i = 0; i < mem_ports; i++) {
-#endif
 		if ((addr >= mem_infos[i].base)
 		 && (addr < (mem_infos[i].base + mem_infos[i].size))) {
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-			port = 0;
-#else
 			port = i;
-#endif
 			break;
 		}
 	}
 
 	return port;
 }
+#endif
 
 int mfc_mem_count(void)
 {
@@ -105,7 +99,7 @@ unsigned long mfc_mem_data_base(int port)
 {
 	unsigned long addr;
 
-#ifndef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifndef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	if ((port < 0) || (port >= mem_ports))
 		return 0;
 #endif
@@ -121,7 +115,7 @@ unsigned int mfc_mem_data_size(int port)
 {
 	unsigned int size;
 
-#ifndef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifndef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	if ((port < 0) || (port >= mem_ports))
 		return 0;
 #endif
@@ -133,7 +127,7 @@ unsigned int mfc_mem_data_size(int port)
 	return size;
 }
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 unsigned int mfc_mem_hole_size(void)
 {
 	if (mfc_mem_data_size(1))
@@ -150,7 +144,11 @@ unsigned long mfc_mem_data_ofs(unsigned long addr, int contig)
 	int i;
 	int port;
 
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
+	port = 0;
+#else
 	port = mfc_mem_addr_port(addr);
+#endif
 	if (port < 0)
 		return 0;
 
@@ -168,52 +166,24 @@ unsigned long mfc_mem_base_ofs(unsigned long addr)
 {
 	int port;
 
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
+	port = 0;
+#else
 	port = mfc_mem_addr_port(addr);
+#endif
 	if (port < 0)
 		return 0;
 
 	return addr - mem_infos[port].base;
 }
 
-unsigned long mfc_mem_addr_ofs(unsigned long ofs, int from)
+unsigned long mfc_mem_addr_ofs(unsigned long ofs, int port)
 {
-	if (from >= mem_ports)
-		from = mem_ports - 1;
+	/* FIXME: right position? */
+	if (port > (mfc_mem_count() - 1))
+		port = mfc_mem_count() - 1;
 
-	return mem_infos[from].base + ofs;
-}
-
-long mfc_mem_ext_ofs(unsigned long addr, unsigned int size, int from)
-{
-	int port;
-	long ofs;
-
-	if (from >= mem_ports)
-		from = mem_ports - 1;
-
-	port = mfc_mem_addr_port(addr);
-	if (port < 0) {
-		mfc_dbg("given address is out of MFC: "
-			"0x%08lx\n", addr);
-		port = from;
-	} else if (port != from) {
-		mfc_warn("given address is in the port#%d [%d]",
-			port, from);
-		port = from;
-	}
-
-	ofs = addr - mem_infos[port].base;
-
-	if ((ofs < 0) || (ofs >= MAX_MEM_OFFSET)) {
-		mfc_err("given address cannot access by MFC: "
-			"0x%08lx\n", addr);
-		ofs = -MAX_MEM_OFFSET;
-	} else if ((ofs + size) > MAX_MEM_OFFSET) {
-		mfc_warn("some part of given address cannot access: "
-			"0x%08lx\n", addr);
-	}
-
-	return ofs;
+	return mem_infos[port].base + ofs;
 }
 
 #ifdef SYSMMU_MFC_ON
@@ -381,22 +351,22 @@ void mfc_mem_cache_inv(const void *start_addr, unsigned long size)
 static void mfc_tlb_invalidate(enum vcm_dev_id id)
 {
 	if (mfc_power_chk()) {
-		/*mfc_clock_on();*/
+		mfc_clock_on();
 
 		s5p_sysmmu_tlb_invalidate(NULL);
 
-		/*mfc_clock_off();*/
+		mfc_clock_off();
 	}
 }
 
 static void mfc_set_pagetable(enum vcm_dev_id id, unsigned long base)
 {
 	if (mfc_power_chk()) {
-		/*mfc_clock_on();*/
+		mfc_clock_on();
 
 		s5p_sysmmu_set_tablebase_pgd(NULL, base);
 
-		/*mfc_clock_off();*/
+		mfc_clock_off();
 	}
 }
 
@@ -423,7 +393,7 @@ int mfc_init_mem_mgr(struct mfc_dev *dev)
 #endif
 #ifdef CONFIG_S5P_MEM_CMA
 	struct cma_info cma_infos[2];
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	size_t bound_size;
 	size_t available_size;
 	size_t hole_size;
@@ -550,7 +520,7 @@ int mfc_init_mem_mgr(struct mfc_dev *dev)
 #else	/* not SYSMMU_MFC_ON */
 	/* early allocator */
 #if defined(CONFIG_S5P_MEM_CMA)
-#ifdef  CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	if (cma_info(&cma_infos[0], dev->device, "A")) {
 		mfc_info("failed to get CMA info of 'mfc-secure'\n");
 		return -ENOMEM;
@@ -774,7 +744,7 @@ int mfc_init_mem_mgr(struct mfc_dev *dev)
 #endif	/* end of SYSMMU_MFC_ON */
 
 	mem_ports = dev->mem_ports;
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	for (i = 0; i < MFC_MAX_MEM_CHUNK_NUM; i++)
 		memcpy(&mem_infos[i], &dev->mem_infos[i], sizeof(struct mfc_mem));
 #else

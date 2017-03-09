@@ -37,11 +37,7 @@ static struct list_head mfc_alloc_head[MFC_MAX_MEM_PORT_NUM];
 /* The free node list sorted by real address */
 static struct list_head mfc_free_head[MFC_MAX_MEM_PORT_NUM];
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-static enum MFC_BUF_ALLOC_SCHEME buf_alloc_scheme = MBS_FIRST_FIT;
-#else
 static enum MFC_BUF_ALLOC_SCHEME buf_alloc_scheme = MBS_BEST_FIT;
-#endif
 
 /* FIXME: test locking, add locking mechanisim */
 /*
@@ -278,12 +274,12 @@ static unsigned long mfc_get_free_buf(unsigned int size, int align, int port)
 
 int mfc_init_buf(void)
 {
-#ifndef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifndef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	int port;
 #endif
 	int ret = 0;
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+#ifdef CONFIG_EXYNOS4_CONTENT_PATH_PROTECTION
 	INIT_LIST_HEAD(&mfc_alloc_head[0]);
 	INIT_LIST_HEAD(&mfc_free_head[0]);
 

@@ -38,6 +38,10 @@
 
 #include "fimc.h"
 
+
+#include <linux/mfd/kcppk/kcppk_common.h>	
+
+
 char buf[32];
 struct fimc_global *fimc_dev;
 
@@ -529,7 +533,7 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 	struct s3c_platform_fimc *pdata = to_fimc_plat(ctrl->dev);
 	is_ctrl.id = 0;
 	is_ctrl.value = 0;
-#ifdef DEBUG
+#if 0 //def DEBUG
 	static struct timeval curr_time, before_time;
 	if (!fimc_cam_use) {
 		do_gettimeofday(&curr_time);
@@ -541,9 +545,11 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 	fimc_hwset_clear_irq(ctrl);
 	if (fimc_hwget_overflow_state(ctrl)) {
 		ctrl->restart = true;
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+	    BIT_STATUS(BIT_ADV7280_OV,BIT_ERROR);
+#endif
 		return;
 	}
-
 	if (pdata->hw_ver >= 0x51) {
 		if (is_frame_end_irq || ctrl->status == FIMC_BUFFER_STOP) {
 			pp = fimc_hwget_present_frame_count(ctrl);
@@ -553,8 +559,8 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 		}
 
 		if (cap->cnt < 20) {
-			printk(KERN_INFO "%s[%d], fimc%d, cnt[%d]\n", __func__,
-							pp, ctrl->id, cap->cnt);
+//			printk(KERN_INFO "%s[%d], fimc%d, cnt[%d]\n", __func__,
+//							pp, ctrl->id, cap->cnt);
 			cap->cnt++;
 		}
 
@@ -645,6 +651,10 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 	} else
 		pp = ((fimc_hwget_frame_count(ctrl) + 2) % 4);
 
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+		cap->irq = 1;
+		wake_up(&ctrl->wq);
+#else
 	if (cap->fmt.field == V4L2_FIELD_INTERLACED_TB) {
 		/* odd value of pp means one frame is made with top/bottom */
 		if (pp & 0x1) {
@@ -655,6 +665,7 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 		cap->irq = 1;
 		wake_up(&ctrl->wq);
 	}
+#endif	
 }
 
 static irqreturn_t fimc_irq(int irq, void *dev_id)

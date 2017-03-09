@@ -456,6 +456,7 @@ static void sdhci_s3c_setup_card_detect_gpio(struct sdhci_s3c *sc)
 	}
 }
 
+/*
 extern struct class *sec_class;
 static struct device *sd_detection_cmd_dev;
 
@@ -488,7 +489,7 @@ static ssize_t sd_detection_cmd_show(struct device *dev,
 }
 
 static DEVICE_ATTR(status, 0444, sd_detection_cmd_show, NULL);
-
+*/
 static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 {
 	struct s3c_sdhci_platdata *pdata = pdev->dev.platform_data;
@@ -647,6 +648,25 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 	/* It supports additional host capabilities if needed */
 	if (pdata->host_caps)
 		host->mmc->caps |= pdata->host_caps;
+#ifdef CONFIG_TYPE_KCPPK
+	ret = sdhci_add_host(host);
+	if (ret) {
+		dev_err(dev, "sdhci_add_host() failed\n");
+		goto err_add_host;
+	}
+
+	/* The following two methods of card detection might call
+	   sdhci_s3c_notify_change() immediately, so they can be called
+	   only after sdhci_add_host(). Setup errors are ignored. */
+	if (pdata->cd_type == S3C_SDHCI_CD_EXTERNAL && pdata->ext_cd_init)
+		pdata->ext_cd_init(&sdhci_s3c_notify_change);
+	if (pdata->cd_type == S3C_SDHCI_CD_GPIO &&
+	    gpio_is_valid(pdata->ext_cd_gpio))
+		sdhci_s3c_setup_card_detect_gpio(sc);
+
+	return 0;
+
+#else
 
 	/* for BCM WIFI */
 	if (pdata->pm_flags)
@@ -732,6 +752,7 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 
 	return 0;
 
+#endif 
  err_add_host:
 	release_resource(sc->ioarea);
 	kfree(sc->ioarea);

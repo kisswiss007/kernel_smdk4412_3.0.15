@@ -19,7 +19,6 @@
 #include <linux/interrupt.h>
 #include <linux/pm_runtime.h>
 #include <linux/mutex.h>
-#include <linux/gpio.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/s5m87xx/s5m-core.h>
 #include <linux/mfd/s5m87xx/s5m-pmic.h>
@@ -117,6 +116,7 @@ static int s5m87xx_i2c_probe(struct i2c_client *i2c,
 	struct s5m_platform_data *pdata = i2c->dev.platform_data;
 	struct s5m87xx_dev *s5m87xx;
 	int ret = 0;
+	u8 data;
 
 	s5m87xx = kzalloc(sizeof(struct s5m87xx_dev), GFP_KERNEL);
 	if (s5m87xx == NULL)
@@ -125,7 +125,7 @@ static int s5m87xx_i2c_probe(struct i2c_client *i2c,
 	i2c_set_clientdata(i2c, s5m87xx);
 	s5m87xx->dev = &i2c->dev;
 	s5m87xx->i2c = i2c;
-	s5m87xx->irq = gpio_to_irq(pdata->irq_gpio);
+	s5m87xx->irq = i2c->irq;
 	s5m87xx->type = id->driver_data;
 
 	if (pdata) {
@@ -137,6 +137,17 @@ static int s5m87xx_i2c_probe(struct i2c_client *i2c,
 	}
 
 	mutex_init(&s5m87xx->iolock);
+
+	s5m_reg_read(i2c, S5M8767_REG_ID, &data);
+
+	if ((data == 0x01) || (data == 0x02) || (data == 0x03) || (data == 0x05) || (data == 0x15))
+		dev_info(s5m87xx->dev, "S5M MFD Detected. DEVICE ID = %x\n", data);
+	else {
+		dev_err(s5m87xx->dev,
+			"device not found on this channel (this is not an error): %x \n",data);
+		ret = -ENODEV;
+		goto err_mfd;
+	}
 
 	s5m87xx->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
 	i2c_set_clientdata(s5m87xx->rtc, s5m87xx);
@@ -162,6 +173,7 @@ err:
 	mfd_remove_devices(s5m87xx->dev);
 	s5m_irq_exit(s5m87xx);
 	i2c_unregister_device(s5m87xx->rtc);
+err_mfd:
 	kfree(s5m87xx);
 	return ret;
 }

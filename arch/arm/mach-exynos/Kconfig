@@ -372,7 +372,7 @@ config EXYNOS4_SETUP_FB_S5P
 
 config EXYNOS4_SETUP_TVOUT
 	bool
-	default y
+	default n
 	help
 	  Common setup code for TVOUT
 
@@ -381,6 +381,18 @@ config EXYNOS4_SETUP_THERMAL
 	depends on CPU_FREQ
 	help
 	  Common setup code for Exynos4 TMU
+
+config EXYNOS_DEV_TMU
+	bool "Use thermal management"
+        default y
+	help
+	  Common code for TMU
+
+config EXYNOS_THERMAL
+	bool "Use thermal management"
+        default y
+	help
+	  Common code for TMU
 
 config EXYNOS_SETUP_THERMAL
 	bool "Use thermal management"
@@ -1004,11 +1016,12 @@ config MACH_SMDK4X12
 	select S3C_DEV_WDT
 	select S3C_DEV_RTC
 	select S3C_DEV_HSMMC2
+#	select S3C_DEV_HSMMC3
 	select S3C_DEV_I2C1
 	select S3C_DEV_I2C2
 	select S3C_DEV_I2C3
-	select S3C_DEV_I2C4
-	select S3C_DEV_I2C5
+	#select S3C_DEV_I2C4
+	#select S3C_DEV_I2C6
 	select S3C_DEV_I2C7
 	select S5P_DEV_I2C_HDMIPHY
 	select S5P_GPIO_INT
@@ -1019,17 +1032,17 @@ config MACH_SMDK4X12
 	select S5P_DEV_USB_EHCI
 	select S5P_DEV_USBGADGET
 	select S5P_DEV_USB_SWITCH
-	select S5P_DEV_THERMAL
 	select S5P_SYSTEM_MMU
+	select EXYNOS_DEV_TMU
 	select EXYNOS_DEV_PD
 	select EXYNOS4_SETUP_SDHCI
 	select EXYNOS4_SETUP_FB_S5P
 	select EXYNOS4_SETUP_FIMD0
 	select EXYNOS4_SETUP_I2C1
-	select EXYNOS4_SETUP_I2C2
-	select EXYNOS4_SETUP_I2C3
-	select EXYNOS4_SETUP_I2C4
-	select EXYNOS4_SETUP_I2C5
+        select EXYNOS4_SETUP_I2C2
+        select EXYNOS4_SETUP_I2C3	
+	#select EXYNOS4_SETUP_I2C4
+	#select EXYNOS4_SETUP_I2C6
 	select EXYNOS4_SETUP_I2C7
 	select EXYNOS4_SETUP_USB_PHY
 	select EXYNOS4_SETUP_KEYPAD
@@ -1039,6 +1052,9 @@ config MACH_SMDK4X12
 	select SAMSUNG_DEV_BACKLIGHT
 	select SAMSUNG_DEV_PWM
 	select SAMSUNG_DEV_KEYPAD
+#	select S5P_DEV_TVOUT
+        select TYPE_KCPPK
+        select EXYNOS_THERMAL
 	help
 	  Machine support for Samsung SMDK4X12
 
@@ -1367,6 +1383,21 @@ config EXYNOS5_DEV_BTS
 menu "MMC/SD slot setup"
 depends on PLAT_S5P
 
+comment "SELECT PLL for SDMMC"
+choice
+	prompt "Use Special PLL for SDMMC"
+	depends on PLAT_S5P
+	help
+		This feature change MMCxOUT's clock source between MPLL and EPLL
+	default EXYNOS4_SDMMC_MPLL_50MHZ
+
+config EXYNOS4_SDMMC_MPLL_50MHZ
+	bool "MPLL"
+
+config EXYNOS4_SDMMC_EPLL_50MHZ
+	bool "EPLL"
+endchoice
+
 comment "SELECT SYNOPSYS CONTROLLER INTERFACE DRIVER"
 config EXYNOS4_DEV_DWMCI
 	bool "DWMCI"
@@ -1483,7 +1514,7 @@ config EXYNOS_DEV_C2C
 comment "Debugging Feature"
 menuconfig SEC_DEBUG
 	bool "Samsung TN Ramdump Feature"
-	default y
+	default n
 	help
 	  Samsung TN Ramdump Feature. Use INFORM3 and magic number at 0xc0000000.
 
@@ -1774,6 +1805,10 @@ config QC_MODEM
 config MSM_SUBSYSTEM_RESTART
 	bool "QC Modem restart handler"
 	default n
+
+config TYPE_KCPPK
+	bool "to Support Vulcan"
+	default y
 
 config QC_MODEM_MDM9X15
 	bool "support QC mdm9x15 modem"

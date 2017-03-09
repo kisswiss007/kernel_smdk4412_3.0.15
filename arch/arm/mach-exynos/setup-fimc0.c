@@ -25,7 +25,33 @@
 #include <mach/map.h>
 
 struct platform_device; /* don't need the contents */
-
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+void s3c_fimc0_cfg_gpio(struct platform_device *pdev)
+{
+	if (soc_is_exynos4210()) {
+		/* CAM A port(b0010) : PCLK, VSYNC, HREF, DATA[0-4] */
+		s3c_gpio_cfgrange_nopull(EXYNOS4210_GPJ0(0), 8, S3C_GPIO_SFN(2));
+		/* CAM A port(b0010) : DATA[5-7], CLKOUT(MIPI CAM also), FIELD */
+		s3c_gpio_cfgrange_nopull(EXYNOS4210_GPJ1(0), 5, S3C_GPIO_SFN(2));
+		/* CAM B port(b0011) : DATA[0-7] */
+		s3c_gpio_cfgrange_nopull(EXYNOS4210_GPE1(0), 8, S3C_GPIO_SFN(3));
+		/* CAM B port(b0011) : PCLK, VSYNC, HREF, FIELD, CLKOUT */
+		s3c_gpio_cfgrange_nopull(EXYNOS4210_GPE0(0), 5, S3C_GPIO_SFN(3));
+	} else {
+		/* CAM A port(b0010) : PCLK, VSYNC, HREF, DATA[0-4] */
+		s3c_gpio_cfgrange_nopull(EXYNOS4212_GPJ0(0), 8, S3C_GPIO_SFN(2));
+		/* CAM A port(b0010) : DATA[5-7], CLKOUT(MIPI CAM also), FIELD */
+		s3c_gpio_cfgrange_nopull(EXYNOS4212_GPJ1(0), 5, S3C_GPIO_SFN(2));
+		/* CAM B port(b0011) : PCLK, DATA[0-6] */
+		s3c_gpio_cfgrange_nopull(EXYNOS4212_GPM0(0), 8, S3C_GPIO_SFN(3));
+		/* CAM B port(b0011) : FIELD, DATA[7]*/
+		s3c_gpio_cfgrange_nopull(EXYNOS4212_GPM1(0), 2, S3C_GPIO_SFN(3));
+		/* CAM B port(b0011) : VSYNC, HREF, CLKOUT*/
+		s3c_gpio_cfgrange_nopull(EXYNOS4212_GPM2(0), 3, S3C_GPIO_SFN(3));
+	}
+	/* note : driver strength to max is unnecessary */
+}
+#else
 void s3c_fimc0_cfg_gpio(struct platform_device *pdev)
 {
 #if defined(CONFIG_MACH_SMDK4212) || defined(CONFIG_MACH_SMDK4210)
@@ -70,7 +96,7 @@ void s3c_fimc0_cfg_gpio(struct platform_device *pdev)
 #endif
 #endif
 }
-
+#endif
 int s3c_fimc_clk_on(struct platform_device *pdev, struct clk **clk)
 {
 	struct clk *sclk_fimc_lclk = NULL;

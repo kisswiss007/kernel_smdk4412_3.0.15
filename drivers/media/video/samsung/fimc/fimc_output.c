@@ -1416,11 +1416,14 @@ int fimc_outdev_set_ctx_param(struct fimc_control *ctrl, struct fimc_ctx *ctx)
 	memset(&src, 0, sizeof(src));
 	memset(&dst, 0, sizeof(dst));
 #endif
-
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+	fimc_hwset_reset(ctrl);
+#else
 	fimc_hwset_sw_reset(ctrl);
 
 	if ((ctrl->status == FIMC_READY_ON) ||
 			(ctrl->status == FIMC_STREAMON_IDLE))
+#endif			
 		fimc_hwset_enable_irq(ctrl, 0, 1);
 
 #if (defined(CONFIG_EXYNOS_DEV_PD) && defined(CONFIG_PM_RUNTIME))

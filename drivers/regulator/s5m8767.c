@@ -10,7 +10,8 @@
  *  option) any later version.
  *
  */
-
+ //leehc
+//#define DEBUG
 #include <linux/bug.h>
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -21,6 +22,7 @@
 #include <linux/regulator/machine.h>
 #include <linux/mfd/s5m87xx/s5m-core.h>
 #include <linux/mfd/s5m87xx/s5m-pmic.h>
+#include <linux/sched.h>
 
 struct s5m8767_info {
 	struct device *dev;
@@ -28,7 +30,9 @@ struct s5m8767_info {
 	int num_regulators;
 	struct regulator_dev **rdev;
 	struct s5m_opmode_data *opmode_data;
+	struct delayed_work set_buchg;
 
+	u8 device_id;
 	int ramp_delay;
 	bool buck2_ramp;
 	bool buck3_ramp;
@@ -54,32 +58,32 @@ struct s5m_voltage_desc {
 
 static const struct s5m_voltage_desc buck_voltage_val1 = {
 	.max = 2225000,
-	.min =	650000,
-	.step =	  6250,
+	.min =  650000,
+	.step =   6250,
 };
 
 static const struct s5m_voltage_desc buck_voltage_val2 = {
 	.max = 1600000,
-	.min =	600000,
-	.step =	  6250,
+	.min =  600000,
+	.step =   6250,
 };
 
 static const struct s5m_voltage_desc buck_voltage_val3 = {
 	.max = 3000000,
-	.min =	750000,
-	.step =	 12500,
+	.min =  750000,
+	.step =  12500,
 };
 
 static const struct s5m_voltage_desc ldo_voltage_val1 = {
 	.max = 3950000,
-	.min =	800000,
-	.step =	 50000,
+	.min =  800000,
+	.step =  50000,
 };
 
 static const struct s5m_voltage_desc ldo_voltage_val2 = {
 	.max = 2375000,
-	.min =	800000,
-	.step =	 25000,
+	.min =  800000,
+	.step =  25000,
 };
 
 static const struct s5m_voltage_desc *reg_voltage_map[] = {
@@ -162,13 +166,13 @@ unsigned int s5m8767_opmode_reg[][3] = {
 	{0x3, 0x2, 0x1},
 	{0x3, 0x2, 0x1},
 	{0x3, 0x2, 0x1}, /* LDO11 */
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
-	{0x3, 0x2, 0x1},
+	{0x3, 0x2, 0x1}, /* LDO12 */
+	{0x3, 0x2, 0x1}, /* LDO13 */
+	{0x3, 0x2, 0x1}, /* LDO14 */
+	{0x3, 0x2, 0x1}, /* LDO15 */
+	{0x3, 0x2, 0x1}, /* LDO16 */
+	{0x3, 0x2, 0x1}, /* LDO17 */
+	{0x3, 0x2, 0x1}, /* LDO18 */
 	{0x3, 0x2, 0x1},
 	{0x3, 0x2, 0x1},
 	{0x3, 0x2, 0x1}, /* LDO21 */
@@ -190,9 +194,9 @@ unsigned int s5m8767_opmode_reg[][3] = {
 	{0x3, 0x1, 0x1},
 	{0x3, 0x1, 0x1}, /* BUCK9 */
 	/* 32KHZ */
-	{0x1, 0x1, 0x1},
-	{0x2, 0x2, 0x2},
-	{0x4, 0x4, 0x4},
+	{0x1, 0x0, 0x0},
+	{0x1, 0x0, 0x0},
+	{0x1, 0x0, 0x0},
 };
 
 static int s5m8767_get_register(struct regulator_dev *rdev, int *reg, int *pmic_en)
@@ -222,7 +226,8 @@ static int s5m8767_get_register(struct regulator_dev *rdev, int *reg, int *pmic_
 		break;
 	case S5M8767_AP_EN32KHZ ... S5M8767_BT_EN32KHZ:
 		*reg = S5M8767_REG_CTRL1;
-		break;
+		*pmic_en = 0x01 << (reg_id - S5M8767_AP_EN32KHZ);
+		return 0;
 	default:
 		return -EINVAL;
 	}
@@ -241,14 +246,17 @@ static int s5m8767_reg_is_enabled(struct regulator_dev *rdev)
 	int ret, reg;
 	int mask = 0xc0, pmic_en;
 	u8 val;
+	
 
 	ret = s5m8767_get_register(rdev, &reg, &pmic_en);
+	//dev_err(&rdev->dev, "%s:s5m8767_get_register - %i,reg:0x%x, pmic_en:%i\n", __func__,ret,reg, pmic_en);
 	if (ret == -EINVAL)
 		return 1;
 	else if (ret)
 		return ret;
 
 	ret = s5m_reg_read(i2c, reg, &val);
+	//dev_err(&rdev->dev, "%s:s5m_reg_read - %i, val:%i\n", __func__,ret, val);
 	if (ret)
 		return ret;
 
@@ -256,6 +264,11 @@ static int s5m8767_reg_is_enabled(struct regulator_dev *rdev)
 	case S5M8767_LDO1 ... S5M8767_BUCK9:
 		mask = 0xc0;
 		break;
+		
+			//leehc add fix buck mask
+	//case S5M8767_BUCK6 ... S5M8767_BUCK9:
+	//		mask = 0x40;
+	//		break;
 	case S5M8767_AP_EN32KHZ:
 		mask = 0x01;
 		break;
@@ -268,6 +281,8 @@ static int s5m8767_reg_is_enabled(struct regulator_dev *rdev)
 	default:
 		return -EINVAL;
 	}
+
+	//dev_err(&rdev->dev, "%s:return  - %i, val:%i,mask:%i,pmic_en:%i\n", __func__,(val & mask) == pmic_en, val,mask,pmic_en);
 
 	return (val & mask) == pmic_en;
 }
@@ -281,13 +296,21 @@ static int s5m8767_reg_enable(struct regulator_dev *rdev)
 	int mask, pmic_en;
 
 	ret = s5m8767_get_register(rdev, &reg, &pmic_en);
+	//leehc
+//	dev_err(&rdev->dev, "%s:s5m8767_get_register - %i,pmic_en:%i\n", __func__,ret,pmic_en);
 	if (ret)
 		return ret;
+	
 
 	switch (reg_id) {
+	//case S5M8767_LDO1 ... S5M8767_BUCK9:
 	case S5M8767_LDO1 ... S5M8767_BUCK9:
 		mask = 0xc0;
 		break;
+		//leehc add fix buck mask
+	//case S5M8767_BUCK6 ... S5M8767_BUCK9:
+	//	mask = 0x40;
+	//	break;
 	case S5M8767_AP_EN32KHZ:
 		mask = 0x01;
 		break;
@@ -300,7 +323,12 @@ static int s5m8767_reg_enable(struct regulator_dev *rdev)
 	default:
 		return -EINVAL;
 	}
-
+	//leehc debug
+	//ret = s5m_reg_update(i2c, reg, pmic_en, mask);
+	//dev_err(&rdev->dev, "%s:s5m_reg_update - %i,pmic_en:%i,mask:%u\n", __func__,ret,pmic_en,mask);
+	//leehc for debug test
+	//s5m8767_reg_is_enabled(rdev);
+	//return ret;
 	return s5m_reg_update(i2c, reg, pmic_en, mask);
 }
 
@@ -313,6 +341,7 @@ static int s5m8767_reg_disable(struct regulator_dev *rdev)
 	int  mask, pmic_en;
 
 	ret = s5m8767_get_register(rdev, &reg, &pmic_en);
+	//dev_err(&rdev->dev, "%s:s5m8767_get_register - %i,reg:0x%x, pmic_en:%i\n", __func__,ret,reg, pmic_en);
 	if (ret)
 		return ret;
 
@@ -320,6 +349,9 @@ static int s5m8767_reg_disable(struct regulator_dev *rdev)
 	case S5M8767_LDO1 ... S5M8767_BUCK9:
 		mask = 0xc0;
 		break;
+	//case S5M8767_BUCK6 ... S5M8767_BUCK9:
+	//	mask = 0x40;
+	//	break;
 	case S5M8767_AP_EN32KHZ:
 		mask = 0x01;
 		break;
@@ -333,6 +365,11 @@ static int s5m8767_reg_disable(struct regulator_dev *rdev)
 		return -EINVAL;
 	}
 
+
+	//leehc debug
+	//ret = s5m_reg_update(i2c, reg, ~mask, mask);
+	//dev_err(&rdev->dev, "%s:s5m_reg_update - %i,pmic_en:%i,~mask:%u,mask:%u\n", __func__,ret,pmic_en,~mask, mask);
+	//return ret;
 	return s5m_reg_update(i2c, reg, ~mask, mask);
 }
 
@@ -475,7 +512,12 @@ static int s5m8767_set_voltage(struct regulator_dev *rdev,
 	s5m_reg_read(i2c, reg, &val);
 	val = val & mask;
 
-	ret = s5m_reg_update(i2c, reg, i, mask);
+	if (s5m8767->device_id == 4 && reg == S5M8767_REG_BUCK1CTRL2)
+		ret = s5m_reg_update(i2c, reg, (i >= 0x40) ? \
+				(0x3F) : (i), mask);
+	else
+		ret = s5m_reg_update(i2c, reg, i, mask);
+
 	*selector = i;
 
 	if (val < i) {
@@ -489,6 +531,9 @@ static inline void s5m8767_set_high(struct s5m8767_info *s5m8767)
 {
 	int temp_index = s5m8767->buck_gpioindex;
 
+	dev_dbg(s5m8767->dev, "%s-index:%i\n", __func__,temp_index);
+	
+
 	gpio_set_value(s5m8767->buck_gpios[0], (temp_index >> 2) & 0x1);
 	gpio_set_value(s5m8767->buck_gpios[1], (temp_index >> 1) & 0x1);
 	gpio_set_value(s5m8767->buck_gpios[2], temp_index & 0x1);
@@ -497,6 +542,8 @@ static inline void s5m8767_set_high(struct s5m8767_info *s5m8767)
 static inline void s5m8767_set_low(struct s5m8767_info *s5m8767)
 {
 	int temp_index = s5m8767->buck_gpioindex;
+
+	dev_dbg(s5m8767->dev, "%s-index:%i\n", __func__,temp_index);
 
 	gpio_set_value(s5m8767->buck_gpios[2], temp_index & 0x1);
 	gpio_set_value(s5m8767->buck_gpios[1], (temp_index >> 1) & 0x1);
@@ -512,6 +559,9 @@ static int s5m8767_set_voltage_buck(struct regulator_dev *rdev,
 	int new_val, old_val, i = 0;
 	int min_vol = min_uV, max_vol = max_uV;
 
+	//leehc for debug
+	//int ret;
+
 	if (reg_id < S5M8767_BUCK1 || reg_id > S5M8767_BUCK9)
 		return -EINVAL;
 
@@ -521,7 +571,13 @@ static int s5m8767_set_voltage_buck(struct regulator_dev *rdev,
 	case S5M8767_BUCK2 ... S5M8767_BUCK4:
 		break;
 	case S5M8767_BUCK5 ... S5M8767_BUCK6:
-		return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
+		{
+			//leehc debug
+			//ret = s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
+			//dev_err(&rdev->dev, "s5m8767_set_voltage - ret:%i\n", ret);
+			//return ret;
+			return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
+		}
 	case S5M8767_BUCK9:
 		return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
 	}
@@ -682,6 +738,20 @@ static struct regulator_desc regulators[] = {
 	},
 };
 
+static void s5m_set_buchg(struct work_struct *work)
+{
+	struct s5m8767_info *s5m8767;
+	u8 val;
+	val = 0x4f; /* set for BUCHG 100uA */
+
+	s5m8767 = container_of(work, struct s5m8767_info, set_buchg.work);
+
+	s5m_reg_write(s5m8767->iodev->i2c, S5M8767_REG_BUCHG, val);
+
+	s5m_reg_read(s5m8767->iodev->i2c, S5M8767_REG_BUCHG, &val);
+	pr_info("%s set S5M8767_REG_BUCHG = 0x%02x\n", __func__, val);
+}
+
 static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
 {
 	struct s5m87xx_dev *iodev = dev_get_drvdata(pdev->dev.parent);
@@ -731,6 +801,17 @@ static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
 	s5m8767->buck4_ramp = pdata->buck4_ramp_enable;
 	s5m8767->opmode_data = pdata->opmode_data;
 
+	s5m_reg_read(i2c, S5M8767_REG_ID, &s5m8767->device_id);
+	printk(KERN_DEBUG "%s: PMIC DEVICE ID=> 0x%x\n",
+			__func__, s5m8767->device_id);
+
+	buck_init = s5m8767_convert_voltage(&buck_voltage_val1,
+						pdata->buck1_init,
+						pdata->buck1_init +
+						buck_voltage_val1.step);
+
+	s5m_reg_write(i2c, S5M8767_REG_BUCK1DVS2, buck_init);
+
 	buck_init = s5m8767_convert_voltage(&buck_voltage_val2,
 						pdata->buck2_init,
 						pdata->buck2_init +
@@ -764,12 +845,16 @@ static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
 						pdata->buck3_init +
 						buck_voltage_val2.step);
 
+	dev_dbg(&pdev->dev, "s5m8767_convert_voltage bunk3_init:%d-%d\n", pdata->buck3_init, buck_init);
+
 	s5m_reg_write(i2c, S5M8767_REG_BUCK3DVS2, buck_init);
 
 	buck_init = s5m8767_convert_voltage(&buck_voltage_val2,
 						pdata->buck4_init,
 						pdata->buck4_init +
 						buck_voltage_val2.step);
+
+	dev_dbg(&pdev->dev, "s5m8767_convert_voltage bunk4_init:%d-%d\n", pdata->buck4_init, buck_init);
 
 	s5m_reg_write(i2c, S5M8767_REG_BUCK4DVS2, buck_init);
 
@@ -855,6 +940,8 @@ static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
 	gpio_direction_output(pdata->buck_ds[1], 0x0);
 	/* DS4 GPIO */
 	gpio_direction_output(pdata->buck_ds[2], 0x0);
+	/* BUCK1 DVS2 Enable */
+	s5m_reg_update(i2c, S5M8767_REG_BUCK1CTRL1, 0x02, 0x02);
 
 	if (pdata->buck2_gpiodvs) {
 		if (pdata->buck3_gpiodvs || pdata->buck4_gpiodvs) {
@@ -967,6 +1054,9 @@ static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
 			goto err;
 		}
 	}
+
+	INIT_DELAYED_WORK_DEFERRABLE(&s5m8767->set_buchg,  s5m_set_buchg);
+	schedule_delayed_work(&s5m8767->set_buchg, msecs_to_jiffies(40000));
 
 	return 0;
 err:

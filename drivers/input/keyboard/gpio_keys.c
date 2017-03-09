@@ -27,7 +27,7 @@
 #include <linux/gpio.h>
 #include <linux/irqdesc.h>
 
-extern struct class *sec_class;
+// extern struct class *sec_class;
 
 struct gpio_button_data {
 	struct gpio_keys_button *button;
@@ -614,6 +614,7 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 		goto fail2;
 	}
 
+/*
 	ddata->sec_key =
 	    device_create(sec_class, NULL, 0, ddata, "sec_key");
 	if (IS_ERR(ddata->sec_key))
@@ -625,7 +626,7 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 			error);
 		goto fail2;
 	}
-
+*/
 	error = input_register_device(input);
 	if (error) {
 		dev_err(dev, "Unable to register input device, error: %d\n",

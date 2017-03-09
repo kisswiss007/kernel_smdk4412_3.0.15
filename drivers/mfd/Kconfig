@@ -34,6 +34,11 @@ config MFD_88PM860X
 	  select individual components like voltage regulators, RTC and
 	  battery-charger under the corresponding menus.
 
+config MFD_SOAP_KCPPK_BUTTONS
+	bool "Kcppk Button driver"
+        default y
+	help
+          KCPPK DISPLAY Buttons on Front Case.
 config MFD_SM501
 	tristate "Support for Silicon Motion SM501"
 	 ---help---

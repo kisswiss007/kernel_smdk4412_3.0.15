@@ -276,9 +276,11 @@ void machine_shutdown(void)
 #endif
 }
 
+extern int kcppk_pshold_activate(int on);
 void machine_halt(void)
 {
 	machine_shutdown();
+	kcppk_pshold_activate(0);	
 	while (1);
 }
 

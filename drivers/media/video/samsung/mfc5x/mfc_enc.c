@@ -16,7 +16,7 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 
-#if defined(CONFIG_BUSFREQ) || defined(CONFIG_EXYNOS4_CPUFREQ)
+#ifdef CONFIG_BUSFREQ
 #include <mach/cpufreq.h>
 #endif
 #include <mach/regs-mfc.h>
@@ -68,16 +68,14 @@ int get_init_arg(struct mfc_inst_ctx *ctx, void *arg)
 
 	init_arg = (struct mfc_enc_init_arg *)arg;
 	enc_ctx = (struct mfc_enc_ctx *)ctx->c_priv;
-	enc_ctx->inputformat = init_arg->cmn.in_frame_map;
 
 	/* Check input stream mode NV12_LINEAR OR NV12_TILE */
 	if (init_arg->cmn.in_frame_map == NV12_TILE)
 		enc_ctx->framemap = 3;	/* MFC_ENC_MAP_FOR_CUR 0: Linear mode 3: Tile mode */
 	else
 		enc_ctx->framemap = 0;	/* Default is Linear mode */
-#if SUPPORT_SLICE_ENCODING
+
 	enc_ctx->outputmode = init_arg->cmn.in_output_mode ? 1 : 0;
-#endif
 
 	/* width */
 	write_reg(init_arg->cmn.in_width, MFC_ENC_HSIZE_PX);
@@ -102,10 +100,9 @@ int get_init_arg(struct mfc_inst_ctx *ctx, void *arg)
 		write_reg(0, MFC_ENC_MSLICE_MB);
 		write_reg(0, MFC_ENC_MSLICE_BIT);
 	}
-#if SUPPORT_SLICE_ENCODING
+
 	/* slice interface */
 	write_reg((enc_ctx->outputmode) << 31, MFC_ENC_SI_CH1_INPUT_FLUSH);
-#endif
 
 	/* cyclic intra refresh */
 	write_reg(init_arg->cmn.in_mb_refresh & 0xFFFF, MFC_ENC_CIR_CTRL);
@@ -115,8 +112,6 @@ int get_init_arg(struct mfc_inst_ctx *ctx, void *arg)
 #if defined(CONFIG_CPU_EXYNOS4212) || defined(CONFIG_CPU_EXYNOS4412)
 	if (init_arg->cmn.in_frame_map == NV21_LINEAR)
 		 write_reg(1, MFC_ENC_NV21_SEL);
-	else if (init_arg->cmn.in_frame_map == NV12_LINEAR)
-		 write_reg(0, MFC_ENC_NV21_SEL);
 #endif
 
 	/* padding control & value */
@@ -375,8 +370,6 @@ int h264_get_init_arg(struct mfc_inst_ctx *ctx, void *arg)
 	/** profile - 0 ~ 2 */
 	reg &= ~(0x3 << 0);
 	reg |= ((init_h264_arg->in_profile & 0x3) << 0);
-	/* set constraint_set0_flag */
-	reg |= (1 << 3);
 	write_reg(reg, MFC_ENC_PROFILE);
 
 	/* interface - 0 / 1 */
@@ -506,9 +499,6 @@ static int pre_seq_start(struct mfc_inst_ctx *ctx)
 	/* Set stream buffer addr */
 	write_reg(mfc_mem_base_ofs(enc_ctx->streamaddr) >> 11, MFC_ENC_SI_CH1_SB_ADR);
 	write_reg(enc_ctx->streamsize, MFC_ENC_SI_CH1_SB_SIZE);
-#if defined(CONFIG_CPU_EXYNOS4212) || defined(CONFIG_CPU_EXYNOS4412)
-	write_shm(ctx, 1, HW_VERSRION);
-#endif
 
 	return 0;
 }
@@ -638,7 +628,7 @@ static int set_init_arg(struct mfc_inst_ctx *ctx, void *arg)
 #else
 	init_arg->cmn.out_u_addr.strm_ref_y = mfc_mem_data_ofs(enc_ctx->streamaddr, 1);
 	init_arg->cmn.out_u_addr.mv_ref_yc = 0;
-	init_arg->cmn.out_p_addr.strm_ref_y = enc_ctx->streamaddr;
+	init_arg->cmn.out_p_addr.strm_ref_y = mfc_mem_base_ofs(enc_ctx->streamaddr);
 	init_arg->cmn.out_p_addr.mv_ref_yc = 0;
 #endif
 
@@ -787,7 +777,7 @@ static int post_frame_start(struct mfc_inst_ctx *ctx)
 		enc_ctx->FrameRateCngTag = 0;
 		enc_ctx->BitRateCngTag = 0;
 
-		write_shm(ctx, 0, ENC_PARAM_CHANGE);	/*RC_BIT_RATE_CHANGE = 4*/
+		write_shm(ctx, 0, ENC_PARAM_CHANGE);	//RC_BIT_RATE_CHANGE = 4
 		write_reg(0, MFC_ENC_SI_CH1_FRAME_INS);
 	}
 
@@ -815,7 +805,7 @@ static int set_exe_arg(struct mfc_inst_ctx *ctx, void *arg)
  */
 static int get_codec_cfg(struct mfc_inst_ctx *ctx, int type, void *arg)
 {
-	/*struct mfc_enc_ctx *enc_ctx = (struct mfc_enc_ctx *)ctx->c_priv;*/
+	//struct mfc_enc_ctx *enc_ctx = (struct mfc_enc_ctx *)ctx->c_priv;
 	int ret = 0;
 
 	mfc_dbg("type: 0x%08x", type);
@@ -1038,7 +1028,7 @@ static int h264_set_codec_cfg(struct mfc_inst_ctx *ctx, int type, void *arg)
 			return MFC_STATE_INVALID;
 		}
 
-		if ((usercfg->basic.values[0] < 3) || (usercfg->basic.values[0] > 5)) {
+		if ((usercfg->basic.values[0] < 3) || (usercfg->basic.values[0] > 5) ) {
 			mfc_err("invalid param: FRAME_PACKING: %d\n",
 				usercfg->basic.values[0]);
 			return MFC_ENC_GET_CONF_FAIL;
@@ -1240,7 +1230,6 @@ int set_strm_ref_buf(struct mfc_inst_ctx *ctx)
 
 		return -1;
 	}
-
 	enc_ctx->streamaddr = alloc->real;
 	enc_ctx->streamsize = MFC_STRM_SIZE;
 
@@ -1366,11 +1355,7 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 	/*
 	 * allocate context buffer
 	 */
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	if ((ctx->c_ops->alloc_ctx_buf) && (!ctx->drm_flag)) {
-#else
 	if (ctx->c_ops->alloc_ctx_buf) {
-#endif
 		if (ctx->c_ops->alloc_ctx_buf(ctx) < 0) {
 			mfc_err("Context buffer allocation Failed");
 			ret = MFC_ENC_INIT_FAIL;
@@ -1393,10 +1378,6 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 		goto err_handling;
 	}
 
-#if SUPPORT_SLICE_ENCODING
-	if (init_arg->cmn.in_output_mode == 1)
-		ctx->slice_flag = 1;
-#endif
 	/*
 	 * get init. argumnets
 	 */
@@ -1441,7 +1422,7 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 
 			if (enc_ctx->frame_skip_enable == 2)
 				write_shm(ctx,
-					((enc_ctx->frame_skip_enable << 1) | (enc_ctx->frameskip << 16) | read_shm(ctx, EXT_ENC_CONTROL)),
+					((enc_ctx->frame_skip_enable << 1)| (enc_ctx->frameskip << 16) | read_shm(ctx, EXT_ENC_CONTROL)),
 					EXT_ENC_CONTROL);
 			else
 				write_shm(ctx, ((enc_ctx->frame_skip_enable << 1)|read_shm(ctx, EXT_ENC_CONTROL)), EXT_ENC_CONTROL);
@@ -1452,7 +1433,7 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 
 			write_shm(ctx, enc_ctx->vuiinfoval, ASPECT_RATIO_IDC);
 			write_shm(ctx, enc_ctx->vuiextendsar, EXTENDED_SAR);
-			write_shm(ctx, ((enc_ctx->vui_info_enable << 15)|read_shm(ctx, EXT_ENC_CONTROL)), EXT_ENC_CONTROL);	/*ASPECT_RATIO_VUI_ENABLE = 1<<15*/
+			write_shm(ctx, ((enc_ctx->vui_info_enable << 15)|read_shm(ctx, EXT_ENC_CONTROL)), EXT_ENC_CONTROL);	//ASPECT_RATIO_VUI_ENABLE = 1<<15
 		}
 
 		if (enc_ctx->IPeriodCngTag == 1) {
@@ -1466,11 +1447,7 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 		if (enc_ctx->HierPCngTag == 1) {
 			mfc_dbg("Encoding Param Setting - HIER_P enable : %d\n", enc_ctx->hier_p_enable);
 
-			write_shm(ctx,
-				((enc_ctx->hier_p_enable << 4) |
-				read_shm(ctx, EXT_ENC_CONTROL)),
-				EXT_ENC_CONTROL);
-				/*HIERARCHICAL_P_ENABLE = 1<<4*/
+			write_shm(ctx, ((enc_ctx->hier_p_enable << 4)|read_shm(ctx, EXT_ENC_CONTROL)), EXT_ENC_CONTROL);	//HIERARCHICAL_P_ENABLE = 1<<4
 		}
 	}
 
@@ -1496,42 +1473,23 @@ int mfc_init_encoding(struct mfc_inst_ctx *ctx, union mfc_args *args)
 		}
 	}
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	if ((ctx->buf_cache_type == CACHE) && (!ctx->drm_flag)) {
-#else
-	if (ctx->buf_cache_type == CACHE) {
-#endif
+	if(ctx->buf_cache_type == CACHE){
 		in_vir = phys_to_virt(enc_ctx->streamaddr);
 		mfc_mem_cache_inv(in_vir, init_arg->cmn.out_header_size);
 		mfc_dbg("cache invalidate\n");
 	}
-#if defined(CONFIG_BUSFREQ)
+
+#ifdef CONFIG_BUSFREQ
 	/* Fix MFC & Bus Frequency for High resolution for better performance */
 	if (ctx->width >= MAX_HOR_RES || ctx->height >= MAX_VER_RES) {
 		if (atomic_read(&ctx->dev->busfreq_lock_cnt) == 0) {
 			/* For fixed MFC & Bus Freq to 200 & 400 MHz for 1080p Contents */
 			exynos4_busfreq_lock(DVFS_LOCK_ID_MFC, BUS_L0);
-			mfc_dbg("[%s] Bus Freq Locked L0\n", __func__);
+			mfc_dbg("[%s] Bus Freq Locked L0  \n",__func__);
 		}
 
 		atomic_inc(&ctx->dev->busfreq_lock_cnt);
 		ctx->busfreq_flag = true;
-	}
-#endif
-
-#if defined(CONFIG_CPU_EXYNOS4210) && defined(CONFIG_EXYNOS4_CPUFREQ)
-	if ((ctx->width >= 320 && ctx->height >= 240)
-		|| (ctx->width >= 240 && ctx->height >= 320)) {
-		if (atomic_read(&ctx->dev->cpufreq_lock_cnt) == 0) {
-			if (0 == ctx->dev->cpufreq_level) /* 500MHz */
-				exynos_cpufreq_get_level(500000,
-						&ctx->dev->cpufreq_level);
-			exynos_cpufreq_lock(DVFS_LOCK_ID_MFC,
-					ctx->dev->cpufreq_level);
-			mfc_dbg("[%s] CPU Freq Locked 500MHz!\n", __func__);
-		}
-		atomic_inc(&ctx->dev->cpufreq_lock_cnt);
-		ctx->cpufreq_flag = true;
 	}
 #endif
 
@@ -1602,18 +1560,8 @@ static int mfc_encoding_frame(struct mfc_inst_ctx *ctx, struct mfc_enc_exe_arg *
 	write_shm(ctx, exe_arg->in_frametag, SET_FRAME_TAG);
 
 	/* Set stream buffer addr */
-	enc_ctx->streamaddr = mfc_mem_base_ofs(exe_arg->in_strm_st);
+	enc_ctx->streamaddr = exe_arg->in_strm_st;
 	enc_ctx->streamsize = exe_arg->in_strm_end - exe_arg->in_strm_st;
-
-#if defined(CONFIG_CPU_EXYNOS4212) || defined(CONFIG_CPU_EXYNOS4412)
-	if (enc_ctx->inputformat == NV21_LINEAR)
-		write_reg(1, MFC_ENC_NV21_SEL);
-	else if (enc_ctx->inputformat == NV12_LINEAR)
-		write_reg(0, MFC_ENC_NV21_SEL);
-#endif
-#if SUPPORT_SLICE_ENCODING
-	write_reg((enc_ctx->outputmode) << 31, MFC_ENC_SI_CH1_INPUT_FLUSH);
-#endif
 
 	write_reg(enc_ctx->streamaddr >> 11, MFC_ENC_SI_CH1_SB_ADR);
 	write_reg(enc_ctx->streamsize, MFC_ENC_SI_CH1_SB_SIZE);
@@ -1669,9 +1617,8 @@ static int mfc_encoding_frame(struct mfc_inst_ctx *ctx, struct mfc_enc_exe_arg *
 		outer_flush_all();
 	}
 
-#if SUPPORT_SLICE_ENCODING
+
 	if (enc_ctx->outputmode == 0) { /* frame */
-#endif
 		ret = mfc_cmd_frame_start(ctx);
 		if (ret < 0)
 			return ret;
@@ -1682,7 +1629,6 @@ static int mfc_encoding_frame(struct mfc_inst_ctx *ctx, struct mfc_enc_exe_arg *
 		/* FIXME: port must be checked */
 		exe_arg->out_Y_addr = mfc_mem_addr_ofs(read_reg(MFC_ENCODED_Y_ADDR) << 11, 1);
 		exe_arg->out_CbCr_addr = mfc_mem_addr_ofs(read_reg(MFC_ENCODED_C_ADDR) << 11, 1);
-#if SUPPORT_SLICE_ENCODING
 	} else {			/* slice */
 		ret = mfc_cmd_slice_start(ctx);
 		if (ret < 0)
@@ -1707,7 +1653,6 @@ static int mfc_encoding_frame(struct mfc_inst_ctx *ctx, struct mfc_enc_exe_arg *
 	mfc_dbg("frame type: %d, encoded size: %d, slice size: %d, stream size: %d\n",
 		exe_arg->out_frame_type, exe_arg->out_encoded_size,
 		enc_ctx->slicesize, read_reg(MFC_ENC_SI_STRM_SIZE));
-#endif
 
 	/* Get Frame Tag top and bottom */
 	exe_arg->out_frametag_top = read_shm(ctx, GET_FRAME_TAG_TOP);

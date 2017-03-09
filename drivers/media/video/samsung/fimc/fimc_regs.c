@@ -137,7 +137,11 @@ int fimc_hwset_camera_source(struct fimc_control *ctrl)
 	u32 cfg = 0;
 
 	/* for now, we support only ITU601 8 bit mode */
-	cfg |= S3C_CISRCFMT_ITU601_8BIT;
+	if (ctrl->cam->fmt == ITU_656_YCBCR422_8BIT) {	
+		cfg &= ~(S3C_CISRCFMT_ITU601_8BIT);
+	} else {
+		cfg |= S3C_CISRCFMT_ITU601_8BIT;		
+	}
 	cfg |= cam->order422;
 
 	if (cam->type == CAM_TYPE_ITU)
@@ -402,9 +406,13 @@ int fimc_hwset_camera_offset(struct fimc_control *ctrl)
 
 	h1 = rect->left;
 	h2 = cam->width - rect->width - rect->left;
+#ifdef CONFIG_MFD_SOAP_KCPPK_BUTTONS
+	v1 = rect->top;
+	v2 = rect->top;
+#else
 	v1 = rect->top;
 	v2 = cam->height - rect->height - rect->top;
-
+#endif
 	cfg = readl(ctrl->regs + S3C_CIWDOFST);
 	cfg &= ~(S3C_CIWDOFST_WINHOROFST_MASK | S3C_CIWDOFST_WINVEROFST_MASK);
 	cfg |= S3C_CIWDOFST_WINHOROFST(h1);
