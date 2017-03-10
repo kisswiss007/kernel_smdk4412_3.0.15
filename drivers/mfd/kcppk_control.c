@@ -38,6 +38,12 @@
 #define BUTTON_PRESS_DELAY 50
 #define AVOID_CHATTER_DELAY 20
 //#define one_times_per_second 1
+//#define LED_PWM_FUNC_ENABLE 1
+
+#ifdef LED_PWM_FUNC_ENABLE
+#include <linux/pwm.h>
+#include <linux/leds.h>
+#endif
 
 bool Debug_MSG = false;
 bool Debug_MSG_IN = false;
@@ -61,6 +67,7 @@ bool KThread_kcppk_button_ing = true;
 bool KThread_low_power_ing = true;
 bool KThread_low_power_cbit_ing = true;
 bool KThread_heating_ing = true;
+bool KThread_send_bit_ing = true;
 
 bool KThread_sure_key_ing = true;
 bool MADE_COMB_KEY = false;   //up & down key
@@ -88,12 +95,14 @@ DECLARE_WAIT_QUEUE_HEAD(wait_inform_to_mainui);
 DECLARE_WAIT_QUEUE_HEAD(wait_low_power_event);
 DECLARE_WAIT_QUEUE_HEAD(wait_low_power_cbit_event);
 DECLARE_WAIT_QUEUE_HEAD(wait_heating_event);
+DECLARE_WAIT_QUEUE_HEAD(wait_send_bit_event); 	
 
 struct task_struct *kcppk_buttons=NULL;
 struct task_struct *send_to_android=NULL;
 struct task_struct *alert_msg=NULL;
 struct task_struct *alert_msg_2=NULL;
 struct task_struct *heat_alert_msg=NULL;
+struct task_struct *send_bit_msg=NULL;
 struct mfd_buttons_platform_data *mfd_buttons;
 
 struct temp_wake_lock {
@@ -119,12 +128,14 @@ struct send_to_mainui
 	u8  BIT_INFO;
 };
 
+#ifdef LED_PWM_FUNC_ENABLE
 struct led_pwm_data {
 	struct led_classdev	cdev;
 	struct pwm_device	*pwm;
 	unsigned int 		active_low;
 	unsigned int		period;
 };
+#endif
 
 struct send_to_mainui *sendtomainui;
 
@@ -196,6 +207,7 @@ struct skcppk_button_switch kcppk_button_switch[] = {
 	},		
 };
 
+#ifdef LED_PWM_FUNC_ENABLE
 void set_led_pwm(struct led_classdev *led_cdev, int brightness) {
 	struct led_pwm_data *led_dat =
 		container_of(led_cdev, struct led_pwm_data, cdev);
@@ -210,6 +222,7 @@ void set_led_pwm(struct led_classdev *led_cdev, int brightness) {
 		pwm_enable(led_dat->pwm);
 	}
 }
+#endif
 
 void BUTTON_LED_TOGGLE_STOP() {
 	BUTTON_LED_BLINKING = false;
@@ -230,6 +243,7 @@ bool BUTTON_LED_TOGGLE_CMD(int value) {
 	   if(gpio_get_value(BUTTON_LED_ON) == value) set_value = true;
 	   count++;
 	   }
+#ifdef LED_PWM_FUNC_ENABLE	   
 	   if(led_cdev != NULL) {	
 	       if(value == 0) {
 	         set_led_pwm(led_cdev,0);   	
@@ -237,7 +251,8 @@ bool BUTTON_LED_TOGGLE_CMD(int value) {
 		   else {
 	         set_led_pwm(led_cdev,64);	  	   	
 		   }
-       }	   
+       }	 
+#endif	   
     return set_value;	
 }
 
@@ -458,6 +473,19 @@ static int kthread_heating(void *arg)
   }
   return 0;
 }
+
+static int kthread_send_bit(void *arg)
+{
+  while(!kthread_should_stop())
+  {  	
+    	KThread_send_bit_ing = false;		
+     	interruptible_sleep_on(&wait_send_bit_event);
+		KThread_send_bit_ing = true;
+	    BIT_CHECK_RTN();		 
+  }
+  return 0;
+}
+
 
 static irqreturn_t Low_Power_interrupt_handler(int irq, void *data)
 {
@@ -904,6 +932,11 @@ void BIT_STATUS(u8 value, u8 setvalue)
 	sendtomainui->BIT_INFO &= ~(1 << value);
 	if(setvalue == BIT_ERROR){
 		sendtomainui->BIT_INFO |= (1 << value);
+		if(value == BIT_ADV7280_OV) {
+		  if(!KThread_send_bit_ing) {
+			wake_up_interruptible(&wait_send_bit_event);	
+		  }
+		}
 	}
 
 }
@@ -1044,7 +1077,9 @@ static int kthread_wait_combkey(void *arg)
 				if(Activated && MADE_COMB_KEY) {
 	                skip_up_down_key = true;
 	                send_data_android(CAM_ONOFF_BTN,ONE_STEP);
-	                add_timer(&Send_Comb_key_timer);
+			        if(IPC_READ_OPEN > 0){		// do not use timer until device ready	
+	                	add_timer(&Send_Comb_key_timer);
+			        }
 	                break;
 				} else {
 				    if(!skip_up_down_key)
@@ -1290,7 +1325,15 @@ int buttons_device_create(void) {
 			}			
         }
 
-		
+		if(send_bit_msg == NULL){ 
+		   send_bit_msg = (struct task_struct *)kthread_run(kthread_send_bit, NULL, "kthread_send_bit");
+           if(send_bit_msg == NULL) {
+	    	printk(KERN_ERR "Memory Allocation Error : %s buffer\n","SEND BIT Message");			   	
+		    } else
+		   {
+	    	printk(KERN_INFO "Memory Allocation OK.. : %s \n","SEND BIT Message");	   	
+		   }
+		}
 
         if(!Heating_Check_GPIO()){
 			if(heat_alert_msg == NULL){ 
@@ -1408,7 +1451,7 @@ int kernel_device_create(void) {
  err_create_1:
  	    return -1;
 }
-
+#ifdef LED_PWM_FUNC_ENABLE
 int kcppk_led_br_open (struct inode *inode, struct file *filp)
 {
 
@@ -1504,7 +1547,7 @@ int led_br_device_create(void) {
  err_create_1:
  	    return -1;
 }
-
+#endif
 int kcppk_buttons_probe(struct platform_device *pd)
 {
     
@@ -1524,12 +1567,12 @@ int kcppk_buttons_probe(struct platform_device *pd)
 	if(ret < 0) {
 		    printk(KERN_ERR " Error : kernel_device_create() !!! \n");
 	}	
-
+#ifdef LED_PWM_FUNC_ENABLE
 	ret = led_br_device_create();
 	if(ret < 0) {
 		    printk(KERN_ERR " Error : led_br_device_create() !!! \n");
 	}		
-
+#endif
     Bit_gpio_input_check_Rtn();
     Bit_gpio_check_Rtn();
 	Bit_gpio_check2_Rtn();
