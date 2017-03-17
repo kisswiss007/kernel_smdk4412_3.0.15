@@ -688,7 +688,7 @@ static void Bit_gpio_input_check_Rtn(void)
 			i++;
 			if (i == 1) i++; //power button skip
 	   }
-	   if(front_button_error_count == mfd_buttons_pd_info.counts) {
+	   if(front_button_error_count == (mfd_buttons_pd_info.counts - 1)) {
 	   	 printk("------   Check Cable for Front Button !!!!!   ------\n");
 		 BIT_STATUS(BIT_F_BUTTON,BIT_ERROR);
 	   }
