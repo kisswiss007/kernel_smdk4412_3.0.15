@@ -37,6 +37,7 @@
 #define BUTTON_DELAY_BT 2
 #define BUTTON_PRESS_DELAY 50
 #define AVOID_CHATTER_DELAY 20
+#define CHECK_TERM 6 * 100  // 6 : 60 seconds
 //#define one_times_per_second 1
 //#define LED_PWM_FUNC_ENABLE 1
 
@@ -61,14 +62,14 @@ static const char *SOAP_Monitor_DEV_NAME = "kcppk_kernel";
 static const char *SOAP_LED_BR_DEV_NAME = "kcppk_led_br";
 
 
-bool Boot_complete_hsc = true;  // ILS request..
+bool Boot_complete_hsc = true;  
 
 bool KThread_kcppk_button_ing = true; 
 bool KThread_low_power_ing = true;
 bool KThread_low_power_cbit_ing = true;
 bool KThread_heating_ing = true;
 bool KThread_send_bit_ing = true;
-
+bool KThread_FBC_CHECK_ing = true;
 bool KThread_sure_key_ing = true;
 bool MADE_COMB_KEY = false;   //up & down key
 int comb1 = UP_KEY_BTN; //CAM_WB_BTN;
@@ -96,6 +97,7 @@ DECLARE_WAIT_QUEUE_HEAD(wait_low_power_event);
 DECLARE_WAIT_QUEUE_HEAD(wait_low_power_cbit_event);
 DECLARE_WAIT_QUEUE_HEAD(wait_heating_event);
 DECLARE_WAIT_QUEUE_HEAD(wait_send_bit_event); 	
+DECLARE_WAIT_QUEUE_HEAD(wait_FBC_START_event);
 
 struct task_struct *kcppk_buttons=NULL;
 struct task_struct *send_to_android=NULL;
@@ -103,6 +105,7 @@ struct task_struct *alert_msg=NULL;
 struct task_struct *alert_msg_2=NULL;
 struct task_struct *heat_alert_msg=NULL;
 struct task_struct *send_bit_msg=NULL;
+struct task_struct *Button_CBIT=NULL;
 struct mfd_buttons_platform_data *mfd_buttons;
 
 struct temp_wake_lock {
@@ -274,7 +277,6 @@ bool GPIO_SET_CMD(int GPIO_NUM, int value) {  //driver/mfd/kcppk_button
     return set_value;	
 }
 
-// For ILS
 static int send_data_android(int value, int step);
 struct timer_list Boot_Completed_timer;
 struct timer_list button_led_toggle;
@@ -402,6 +404,57 @@ struct mfd_buttons_platform_data_info mfd_buttons_pd_info = {
 
 #if 1
 bool wait_for_ready_read_dev(void);
+void BIT_CHECK_RTN(void);
+int  GPIO_CONFIGURE_FOR_KCPPK(); 
+int  GPIO_CONFIGURE_FOR_KCPPK_2();	
+int  Interrupt_CONFIGURE_FOR_KCPPK();
+int kthread_FBC_CHECK(void *arg)
+{
+  int i;
+  signed int pushed_button_count = 0;
+  KThread_FBC_CHECK_ing = false;	
+  interruptible_sleep_on(&wait_FBC_START_event);  
+  KThread_FBC_CHECK_ing = true;  
+  while(!kthread_should_stop())
+  {  	
+    i=0;
+	while (i < mfd_buttons_pd_info.counts) {
+	   if(i != 1 && i != 3 && i != 4){		
+	       if(mfd_buttons[i].active_high && gpio_get_value(mfd_buttons[i].gpio_num) == HIGH_STATE)
+	       {
+	         mfd_buttons[i].error_count++;
+	       } else if(!(mfd_buttons[i].active_high) && gpio_get_value(mfd_buttons[i].gpio_num) == LOW_STATE) {
+	         mfd_buttons[i].error_count++;  
+	       } else {
+	         mfd_buttons[i].error_count = 0;
+			 if(mfd_buttons[i].error_occurs) {
+			 	pushed_button_count--;
+				if(pushed_button_count == 0){
+			        BIT_STATUS(BIT_F_BUTTON,BIT_OK | (1 << BIT_NMI));	
+					if(Debug_MSG) printk("------------- CLEAR --------------\n");
+				}
+			 }
+			 mfd_buttons[i].error_occurs = false;
+	       }
+	    if(mfd_buttons[i].error_count == CHECK_TERM) {
+			mfd_buttons[i].error_count = (CHECK_TERM - 10);
+			if(mfd_buttons[i].error_occurs == false) {
+				mfd_buttons[i].error_occurs = true;
+				pushed_button_count++;				
+					if(Debug_MSG) printk("------------- SET ERROR : %d --------------\n",pushed_button_count);				
+			}
+			if(pushed_button_count == 1){			
+		        BIT_STATUS(BIT_F_BUTTON,BIT_ERROR | (1 << BIT_NMI));	
+			}
+	    }
+	   }
+	i++;
+	}
+    msleep(95); //100
+  }
+  return 0;
+}
+
 int kthread_low_power(void *arg)
 {
   bool Alert_INFORM_TO_UI = false;
@@ -911,6 +964,32 @@ static int send_data_android(int value, int step) {
 	return 0;
 }
 
+void IBIT_CHECK_RTN(void) {  
+	int i = 0;
+	int ret = 0;
+	BIT_STATUS(BIT_F_BUTTON,BIT_OK);	
+	while(i < mfd_buttons_pd_info.counts) {
+        free_irq(mfd_buttons[i].irq,mfd_buttons);
+		gpio_free(mfd_buttons[i].gpio_num);
+        printk(KERN_INFO " Free gpio : %d,  irq : %s \n",mfd_buttons[i].gpio_num,mfd_buttons[i].name );		
+		i++;
+	}
+	
+    GPIO_CONFIGURE_FOR_KCPPK(); 
+
+    ret = Interrupt_CONFIGURE_FOR_KCPPK();
+	if(ret < 0) {printk(KERN_ERR " Can't allocate request irq for %s memory space !!! \n","Front Buttons" );}
+	
+    GPIO_CONFIGURE_FOR_KCPPK_2();
+	
+	while(KThread_send_bit_ing){
+		  	msleep(1);}
+	if(!KThread_send_bit_ing) {
+		wake_up_interruptible(&wait_send_bit_event);	
+	}	
+    return;	
+}
+
 void BIT_CHECK_RTN(void) {  
     int count;
 
@@ -929,16 +1008,25 @@ void BIT_CHECK_RTN(void) {
 
 void BIT_STATUS(u8 value, u8 setvalue)
 {
+	bool NMI_Check;
+	NMI_Check = (setvalue & (1 << BIT_NMI))? true:false;
+	setvalue = setvalue & ~(1 << BIT_NMI);
 	sendtomainui->BIT_INFO &= ~(1 << value);
 	if(setvalue == BIT_ERROR){
 		sendtomainui->BIT_INFO |= (1 << value);
-		if(value == BIT_ADV7280_OV) {
+		if(value == BIT_ADV7280_OV || NMI_Check) {
 		  if(!KThread_send_bit_ing) {
 			wake_up_interruptible(&wait_send_bit_event);	
 		  }
 		}
+	} else if(NMI_Check) {
+	      while(KThread_send_bit_ing){
+		  	msleep(1);}
+		  if(!KThread_send_bit_ing) {
+			wake_up_interruptible(&wait_send_bit_event);	
+		  }	
 	}
-
+	if(Debug_MSG) printk("=================sendtomainui->BIT_INFO : %x ========\n",sendtomainui->BIT_INFO);
 }
 
 static int kthread_kcppk_buttons(void *arg)
@@ -1185,6 +1273,10 @@ long kcppk_buttons_ioctl(struct file *filp, unsigned int cmd, unsigned long valu
 
 			BIT_CHECK_RTN();	 
 			break;				
+		case IBIT_CHECK:		
+			if(Debug_MSG) printk("IBIT_CHECK !!!!!!!!!!! \n");
+			IBIT_CHECK_RTN();	 
+			break;					
 		case BUTTON_LED_TOOGLE_STOP:		
 
 			BUTTON_LED_TOGGLE_STOP();	 
@@ -1362,6 +1454,9 @@ int kcppk_kernel_open (struct inode *inode, struct file *filp)
 		Boot_complete_hsc = false;
      	Boot_Completed_timer_init();  	
 		Send_Comb_key_timer_init();
+		if(KThread_FBC_CHECK_ing == false) {
+	        wake_up_interruptible(&wait_FBC_START_event);			
+		}
 	}
 	return 0;
 }
@@ -1548,6 +1643,44 @@ int led_br_device_create(void) {
  	    return -1;
 }
 #endif
+int GPIO_CONFIGURE_FOR_KCPPK() {
+    int ret = 0;
+    Bit_gpio_input_check_Rtn();
+    Bit_gpio_check_Rtn();
+	Bit_gpio_check2_Rtn();
+    return ret;
+}
+
+int GPIO_CONFIGURE_FOR_KCPPK_2() {
+    int ret = 0;
+    ret = kcppk_buttons_gpio_init();
+	if(ret < 0) {
+		    printk(KERN_ERR " Error : kcppk_buttons_gpio_init() !!! \n");
+	}	
+    return ret;
+}
+
+int Interrupt_CONFIGURE_FOR_KCPPK(){
+	int ret;
+    int i = 0;
+	while(i < mfd_buttons_pd_info.counts) {
+       if(mfd_buttons[i].active_high)
+       {
+	   ret = request_irq(mfd_buttons[i].irq, dummy_kcppk_interrupt_handler,
+	   	                          (IRQF_TRIGGER_RISING|IRQF_ONESHOT),
+	   	                          mfd_buttons[i].name, mfd_buttons);
+       } else {
+	   ret = request_irq(mfd_buttons[i].irq, dummy_kcppk_interrupt_handler,
+	   	                          (IRQF_TRIGGER_FALLING|IRQF_ONESHOT),
+	   	                          mfd_buttons[i].name, mfd_buttons);  
+       }
+		if (ret) {
+			return ret;
+		}
+		i++;
+	}
+	return ret;
+}
 int kcppk_buttons_probe(struct platform_device *pd)
 {
     
@@ -1573,14 +1706,15 @@ int kcppk_buttons_probe(struct platform_device *pd)
 		    printk(KERN_ERR " Error : led_br_device_create() !!! \n");
 	}		
 #endif
-    Bit_gpio_input_check_Rtn();
-    Bit_gpio_check_Rtn();
-	Bit_gpio_check2_Rtn();
-	
-    mfd_buttons = kzalloc(sizeof(struct mfd_buttons_platform_data) * (mfd_buttons_pd_info.counts), GFP_KERNEL);
-	if (mfd_buttons == NULL) {
-		return -ENOMEM;
-		printk(KERN_ERR " Can't allocate mfd_buttons memory space !!! \n");
+
+    GPIO_CONFIGURE_FOR_KCPPK();
+
+	if(mfd_buttons == NULL) {
+	    mfd_buttons = kzalloc(sizeof(struct mfd_buttons_platform_data) * (mfd_buttons_pd_info.counts), GFP_KERNEL);
+		if (mfd_buttons == NULL) {
+			return -ENOMEM;
+			printk(KERN_ERR " Can't allocate mfd_buttons memory space !!! \n");
+		}
 	}
 
 	while(i < mfd_buttons_pd_info.counts) {
@@ -1591,31 +1725,30 @@ int kcppk_buttons_probe(struct platform_device *pd)
 		mfd_buttons[i].gpio_num = kcppk_buttonsw[i].gpio_num;
 		mfd_buttons[i].check_time = kcppk_buttonsw[i].check_time;
 		mfd_buttons[i].two_step= kcppk_buttonsw[i].two_step;
+		mfd_buttons[i].error_count = 0;
+		mfd_buttons[i].error_occurs = false;		
 		if(mfd_buttons[i].two_step) mfd_buttons[i].check_time2 = kcppk_buttonsw[i].check_time2;		
 		if(Debug_MSG) printk(KERN_INFO "======mfd_buttons[i].name : %s  ====irq : %d ,  gpio : %d ======= \n",mfd_buttons[i].name, mfd_buttons[i].irq,mfd_buttons[i].gpio_num);
-       if(mfd_buttons[i].active_high)
-       {
-	   ret = request_irq(mfd_buttons[i].irq, dummy_kcppk_interrupt_handler,
-	   	                          (IRQF_TRIGGER_RISING|IRQF_ONESHOT),
-	   	                          mfd_buttons[i].name, mfd_buttons);
-       } else {
-	   ret = request_irq(mfd_buttons[i].irq, dummy_kcppk_interrupt_handler,
-	   	                          (IRQF_TRIGGER_FALLING|IRQF_ONESHOT),
-	   	                          mfd_buttons[i].name, mfd_buttons);  
-       }
-		if (ret) {
-		    printk(KERN_ERR " Can't allocate request irq for %s memory space !!! \n",mfd_buttons[i].name );
-			return ret;
-		}
 		i++;
 	}
 
+    ret = Interrupt_CONFIGURE_FOR_KCPPK();
+	if(ret < 0) printk(KERN_ERR " Can't allocate request irq for %s memory space !!! \n",mfd_buttons[i].name );
+
 	if(WAKE_LOCK_ENABLE) wake_lock(&twakelock.wake_lock);
 
-    ret = kcppk_buttons_gpio_init();
-	if(ret < 0) {
-		    printk(KERN_ERR " Error : kcppk_buttons_gpio_init() !!! \n");
-	}	
+    GPIO_CONFIGURE_FOR_KCPPK_2();
+
+	if(Button_CBIT == NULL){ 
+	   Button_CBIT = (struct task_struct *)kthread_run(kthread_FBC_CHECK, NULL, "kthread_FBC_CHECK");
+       if(Button_CBIT == NULL) {
+    	printk(KERN_ERR "Memory Allocation Error : %s buffer\n","kthread_FBC_CHECK");			   	
+	    } else
+	   {
+    	printk(KERN_INFO "Memory Allocation OK.. : %s \n","kthread_FBC_CHECK");	   	
+	   }
+	}
+
 
 	
 	return 0;

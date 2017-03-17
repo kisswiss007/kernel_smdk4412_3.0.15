@@ -14,6 +14,7 @@
 #define Kcppk_Char_Dev_4 4 // kcppk_sensor (Between kernel and Android Service)
 
 #define BIT_CHECK 80
+#define IBIT_CHECK 81
 /*
 // 0x80 : BIT_OK
 // bit#0 : Low Power Alert
@@ -29,9 +30,10 @@
 #define BIT_ADV7280 3
 #define BIT_HEATING 4
 #define BIT_F_BUTTON 5
+#define BIT_NMI 7
 
-#define BIT_OK 0
-#define BIT_ERROR 1
+#define BIT_OK 0x00
+#define BIT_ERROR 0x01
 
 
 struct mfd_wakeup_platform_data
@@ -54,6 +56,8 @@ struct mfd_buttons_platform_data
 	   int            check_time;
 	   bool           two_step;
 	   int            check_time2;
+	   int            error_count;
+	   bool           error_occurs;
 };
 
 struct mfd_wakeup_platform_data_info
